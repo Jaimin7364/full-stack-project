@@ -1,6 +1,6 @@
 'use client'
 import React, { useState, useEffect } from 'react';
-import { User, Clock, Calendar, CheckCircle, Users, LogIn, UserPlus, Eye, EyeOff, Mail, Phone, Lock, MapPin, ListTodo, Moon, Sun, X, Plus, Trash2, Building2, Timer } from 'lucide-react';
+import { User, Clock, Calendar, CheckCircle, Users, LogIn, UserPlus, Eye, EyeOff, Mail, Phone, Lock, MapPin, ListTodo, Moon, Sun, X, Plus, Trash2, Building2, Timer, LogOut } from 'lucide-react';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
@@ -122,8 +122,120 @@ const AttendanceApp = () => {
   const showMessage = (msg: string, isError = false) => {
     setMessage(msg);
     setTimeout(() => setMessage(''), 5000);
+  }; const fetchLocation = async () => {
+    if (!navigator.geolocation) {
+      showMessage("Geolocation is not supported by this browser.", true);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      // Alternative approach - explicit typing
+const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+  navigator.geolocation.getCurrentPosition(
+    (pos) => resolve(pos),
+    (err) => reject(err),
+    {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 600000
+    }
+  );
+});
+      const { latitude, longitude } = position.coords;
+
+      // Convert coordinates to address using reverse geocoding
+      const address = await reverseGeocode(latitude, longitude);
+      setLocation(address);
+      showMessage("Location fetched successfully!", false);
+
+    } catch (error) {
+      console.error('Location error:', error);
+      let errorMessage = "Unable to fetch location. ";
+
+      if (error && typeof error === 'object' && 'code' in error) {
+        if (error.code === 1) {
+          errorMessage += "Please allow location access and try again.";
+        } else if (error.code === 2) {
+          errorMessage += "Location information is unavailable.";
+        } else if (error.code === 3) {
+          errorMessage += "Location request timed out.";
+        }
+      } else {
+        errorMessage += (error instanceof Error ? error.message : "Please try again.");
+      }
+
+      showMessage(errorMessage, true);
+    } finally {
+      setLoading(false);
+    }
   };
 
+  // Reverse geocoding function using multiple APIs
+  const reverseGeocode = async (lat: number, lon: number) => {
+    // Try OpenStreetMap Nominatim first (free, no API key required)
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,
+        {
+          headers: {
+            'User-Agent': 'AttendanceApp/1.0'
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.display_name) {
+          return formatAddress(data.address || {}, data.display_name);
+        }
+      }
+    } catch (error) {
+      console.warn('Nominatim geocoding failed:', error);
+    }
+
+    // Fallback to basic coordinates if geocoding fails
+    return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+  };
+
+  // Format address from geocoding response
+  const formatAddress = (addressComponents: { house_number: any; road: any; suburb: any; neighbourhood: any; city: any; town: any; village: any; state: any; province: any; }, fullAddress: string) => {
+    const parts = [];
+
+    // Add house number and street
+    if (addressComponents.house_number && addressComponents.road) {
+      parts.push(`${addressComponents.house_number} ${addressComponents.road}`);
+    } else if (addressComponents.road) {
+      parts.push(addressComponents.road);
+    }
+
+    // Add locality/suburb
+    if (addressComponents.suburb || addressComponents.neighbourhood) {
+      parts.push(addressComponents.suburb || addressComponents.neighbourhood);
+    }
+
+    // Add city
+    if (addressComponents.city || addressComponents.town || addressComponents.village) {
+      parts.push(addressComponents.city || addressComponents.town || addressComponents.village);
+    }
+
+    // Add state/province
+    if (addressComponents.state || addressComponents.province) {
+      parts.push(addressComponents.state || addressComponents.province);
+    }
+
+    // If we have formatted parts, use them; otherwise use full address
+    if (parts.length > 0) {
+      return parts.join(', ');
+    }
+
+    // Clean up full address by removing country and postal code for brevity
+    return fullAddress
+      .split(',')
+      .slice(0, -2) // Remove last 2 parts (usually postal code and country)
+      .join(',')
+      .trim();
+  };
   const fetchProfile = async () => {
     try {
       const data = await api('/auth/profile');
@@ -394,7 +506,7 @@ const AttendanceApp = () => {
                 <input
                   type="text"
                   value={authData.name}
-                  onChange={(e) => setAuthData({...authData, name: e.target.value})}
+                  onChange={(e) => setAuthData({ ...authData, name: e.target.value })}
                   className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all duration-200 bg-white/50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
                   placeholder="Enter your full name"
                   required
@@ -408,7 +520,7 @@ const AttendanceApp = () => {
                 <input
                   type="email"
                   value={authData.email}
-                  onChange={(e) => setAuthData({...authData, email: e.target.value})}
+                  onChange={(e) => setAuthData({ ...authData, email: e.target.value })}
                   className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all duration-200 bg-white/50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
                   placeholder="Enter your email"
                   required
@@ -422,7 +534,7 @@ const AttendanceApp = () => {
                 <input
                   type="tel"
                   value={authData.phone}
-                  onChange={(e) => setAuthData({...authData, phone: e.target.value})}
+                  onChange={(e) => setAuthData({ ...authData, phone: e.target.value })}
                   className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all duration-200 bg-white/50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
                   placeholder="Enter 10-digit phone number"
                   pattern="[0-9]{10}"
@@ -438,14 +550,14 @@ const AttendanceApp = () => {
                   <input
                     type={authData.showPassword ? 'text' : 'password'}
                     value={authData.password}
-                    onChange={(e) => setAuthData({...authData, password: e.target.value})}
+                    onChange={(e) => setAuthData({ ...authData, password: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent pr-12 transition-all duration-200 bg-white/50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
                     placeholder="Create a strong password"
                     required
                   />
                   <button
                     type="button"
-                    onClick={() => setAuthData({...authData, showPassword: !authData.showPassword})}
+                    onClick={() => setAuthData({ ...authData, showPassword: !authData.showPassword })}
                     className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition duration-200"
                   >
                     {authData.showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -492,7 +604,7 @@ const AttendanceApp = () => {
                 <input
                   type="text"
                   value={authData.otp}
-                  onChange={(e) => setAuthData({...authData, otp: e.target.value.replace(/\D/g, '').slice(0, 6)})}
+                  onChange={(e) => setAuthData({ ...authData, otp: e.target.value.replace(/\D/g, '').slice(0, 6) })}
                   className="w-full px-4 py-4 border border-gray-300 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 dark:focus:ring-green-400 focus:border-transparent text-center text-2xl tracking-[0.5em] transition-all duration-200 bg-white/50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
                   placeholder="000000"
                   maxLength={6}
@@ -538,7 +650,7 @@ const AttendanceApp = () => {
               <input
                 type="email"
                 value={authData.email}
-                onChange={(e) => setAuthData({...authData, email: e.target.value})}
+                onChange={(e) => setAuthData({ ...authData, email: e.target.value })}
                 className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent transition-all duration-200 bg-white/50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
                 placeholder="Enter your email"
                 required
@@ -553,14 +665,14 @@ const AttendanceApp = () => {
                 <input
                   type={authData.showPassword ? 'text' : 'password'}
                   value={authData.password}
-                  onChange={(e) => setAuthData({...authData, password: e.target.value})}
+                  onChange={(e) => setAuthData({ ...authData, password: e.target.value })}
                   className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent pr-12 transition-all duration-200 bg-white/50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
                   placeholder="Enter your password"
                   required
                 />
                 <button
                   type="button"
-                  onClick={() => setAuthData({...authData, showPassword: !authData.showPassword})}
+                  onClick={() => setAuthData({ ...authData, showPassword: !authData.showPassword })}
                   className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition duration-200"
                 >
                   {authData.showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -588,7 +700,6 @@ const AttendanceApp = () => {
       </div>
     );
   };
-
   const renderUserDashboard = () => (
     <div className="max-w-6xl mx-auto space-y-6">
       {/* Enhanced Header */}
@@ -606,7 +717,7 @@ const AttendanceApp = () => {
               onClick={handleLogout}
               className="bg-red-500/80 hover:bg-red-500 px-4 py-2 rounded-xl transition-all duration-200 backdrop-blur-sm border border-red-400/50 flex items-center"
             >
-              <LogIn className="w-4 h-4 mr-2" />
+              <LogOut className="w-4 h-4 mr-2" />
               Logout
             </button>
           </div>
@@ -629,9 +740,9 @@ const AttendanceApp = () => {
                   <Clock className="w-4 h-4 text-green-600 dark:text-green-400" />
                 </div>
                 <p className="text-xl font-bold text-gray-900 dark:text-gray-100">{new Date(todaysAttendance.startTime).toLocaleTimeString()}</p>
-                <p className="text-sm text-gray-600 dark:text-gray-400 flex items-center mt-2">
-                  <MapPin className="w-3 h-3 mr-1" />
-                  {todaysAttendance.startLocation}
+                <p className="text-sm text-gray-600 dark:text-gray-400 flex items-start mt-2">
+                  <MapPin className="w-3 h-3 mr-1 mt-0.5 flex-shrink-0" />
+                  <span className="break-words">{todaysAttendance.startLocation}</span>
                 </p>
               </div>
               {todaysAttendance.endTime && (
@@ -641,13 +752,27 @@ const AttendanceApp = () => {
                     <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                   </div>
                   <p className="text-xl font-bold text-gray-900 dark:text-gray-100">{new Date(todaysAttendance.endTime).toLocaleTimeString()}</p>
-                  <p className="text-sm text-gray-600 dark:text-gray-400 flex items-center mt-2">
-                    <MapPin className="w-3 h-3 mr-1" />
-                    {todaysAttendance.endLocation}
+                  <p className="text-sm text-gray-600 dark:text-gray-400 flex items-start mt-2">
+                    <MapPin className="w-3 h-3 mr-1 mt-0.5 flex-shrink-0" />
+                    <span className="break-words">{todaysAttendance.endLocation}</span>
                   </p>
                 </div>
               )}
             </div>
+
+            {/* Working Hours Display */}
+            {todaysAttendance.endTime && (
+              <div className="bg-gradient-to-br from-yellow-50 to-orange-100 dark:from-yellow-900/30 dark:to-orange-900/30 p-5 rounded-xl border border-yellow-200 dark:border-yellow-700">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium text-yellow-700 dark:text-yellow-400">Total Working Hours</p>
+                  <Timer className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
+                </div>
+                <p className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                  {Math.floor((new Date(todaysAttendance.endTime).getTime() - new Date(todaysAttendance.startTime).getTime()) / (1000 * 60 * 60))}h{' '}
+                  {Math.floor(((new Date(todaysAttendance.endTime).getTime() - new Date(todaysAttendance.startTime).getTime()) % (1000 * 60 * 60)) / (1000 * 60))}m
+                </p>
+              </div>
+            )}
 
             {todaysAttendance.tasks && todaysAttendance.tasks.length > 0 && (
               <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-5 border border-gray-200 dark:border-gray-600">
@@ -657,9 +782,9 @@ const AttendanceApp = () => {
                 </h3>
                 <div className="space-y-2">
                   {todaysAttendance.tasks.map((task, index) => (
-                    <div key={index} className="flex items-center bg-white dark:bg-gray-800 rounded-lg p-3 shadow-sm">
-                      <CheckCircle className="w-4 h-4 text-green-500 mr-3 flex-shrink-0" />
-                      <span className="text-gray-700 dark:text-gray-300">{task}</span>
+                    <div key={index} className="flex items-start bg-white dark:bg-gray-800 rounded-lg p-3 shadow-sm">
+                      <CheckCircle className="w-4 h-4 text-green-500 mr-3 flex-shrink-0 mt-0.5" />
+                      <span className="text-gray-700 dark:text-gray-300 break-words">{task}</span>
                     </div>
                   ))}
                 </div>
@@ -680,18 +805,36 @@ const AttendanceApp = () => {
             <div className="bg-gradient-to-br from-gray-50 to-blue-50 dark:from-gray-800 dark:to-blue-900/20 rounded-xl p-8 border border-gray-200 dark:border-gray-700">
               <Building2 className="w-16 h-16 text-gray-400 dark:text-gray-600 mx-auto mb-4" />
               <p className="text-xl font-medium text-gray-600 dark:text-gray-400 mb-6">Ready to start your day?</p>
-              <div className="max-w-md mx-auto">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 text-left">
-                  <MapPin className="w-4 h-4 inline mr-2 text-blue-500 dark:text-blue-400" />
-                  Your Current Location
-                </label>
-                <input
-                  type="text"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 transition-all duration-200 bg-white/50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 text-center"
-                  placeholder="e.g., Office Building, Floor 3"
-                />
+              <div className="max-w-md mx-auto space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 text-left">
+                    <MapPin className="w-4 h-4 inline mr-2 text-blue-500 dark:text-blue-400" />
+                    Your Current Location
+                  </label>
+                  <div className="space-y-3">
+                    <button
+                      onClick={fetchLocation}
+                      disabled={loading}
+                      className="w-full bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white px-4 py-3 rounded-lg transition-all duration-300 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105 text-sm font-medium flex items-center justify-center"
+                    >
+                      {loading ? (
+                        <LoadingSpinner />
+                      ) : (
+                        <>
+                          <MapPin className="w-4 h-4 mr-2" />
+                          Get My Current Location
+                        </>
+                      )}
+                    </button>
+                    <input
+                      type="text"
+                      value={location}
+                      onChange={(e) => setLocation(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 transition-all duration-200 bg-white/50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
+                      placeholder="Or enter your location manually"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
             <button
@@ -720,15 +863,31 @@ const AttendanceApp = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
                   <MapPin className="w-4 h-4 inline mr-2 text-blue-500 dark:text-blue-400" />
-                  End Location
+                  Checkout Location
                 </label>
-                <input
-                  type="text"
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 transition-all duration-200 bg-white/50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
-                  placeholder="Enter your checkout location"
-                />
+                <div className="space-y-3">
+                  <button
+                    onClick={fetchLocation}
+                    disabled={loading}
+                    className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white px-4 py-2 rounded-lg transition-all duration-300 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105 text-sm font-medium flex items-center"
+                  >
+                    {loading ? (
+                      <LoadingSpinner />
+                    ) : (
+                      <>
+                        <MapPin className="w-4 h-4 mr-2" />
+                        Get My Current Location
+                      </>
+                    )}
+                  </button>
+                  <input
+                    type="text"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 transition-all duration-200 bg-white/50 dark:bg-gray-700/50 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400"
+                    placeholder="Or enter your checkout location manually"
+                  />
+                </div>
               </div>
 
               <div>
@@ -749,7 +908,7 @@ const AttendanceApp = () => {
                       {tasks.length > 1 && (
                         <button
                           onClick={() => removeTask(index)}
-                          className="bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 p-3 rounded-xl transition-all duration-200 border border-red-200 dark:border-red-700"
+                          className="bg-red-100 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 p-3 rounded-xl transition-all duration-200 border border-red-200 dark:border-red-700 flex-shrink-0"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -824,7 +983,6 @@ const AttendanceApp = () => {
       )}
     </div>
   );
-
   const renderAdminDashboard = () => (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Enhanced Admin Header */}
@@ -838,8 +996,8 @@ const AttendanceApp = () => {
             <p className="text-purple-100">Manage attendance and monitor team performance</p>
           </div>
           <div className="flex items-center space-x-3">
-            
-              
+
+
             <button
               onClick={handleLogout}
               className="bg-red-500/80 hover:bg-red-500 px-4 py-2 rounded-xl transition-all duration-200 backdrop-blur-sm border border-red-400/50 flex items-center"
@@ -876,7 +1034,7 @@ const AttendanceApp = () => {
             </button>
           )}
         </div>
-        
+
         {adminData.todaysAttendance.length === 0 ? (
           <div className="text-center py-12">
             <Users className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
@@ -921,11 +1079,10 @@ const AttendanceApp = () => {
                     </div>
                   </div>
                   <div className="flex items-center">
-                    <div className={`px-3 py-1 rounded-full text-sm font-medium flex items-center ${
-                      record.verified 
-                        ? 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300' 
+                    <div className={`px-3 py-1 rounded-full text-sm font-medium flex items-center ${record.verified
+                        ? 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300'
                         : 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-300'
-                    }`}>
+                      }`}>
                       <CheckCircle className={`w-3 h-3 mr-1 ${record.verified ? 'text-green-600 dark:text-green-400' : 'text-yellow-600 dark:text-yellow-400'}`} />
                       {record.verified ? 'Verified' : 'Pending'}
                     </div>
@@ -1018,11 +1175,10 @@ const AttendanceApp = () => {
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                    user.role === 'admin' 
+                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${user.role === 'admin'
                       ? 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300'
                       : 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300'
-                  }`}>
+                    }`}>
                     {user.role === 'admin' ? '👑 Admin' : '👤 User'}
                   </span>
                   <button
@@ -1051,11 +1207,10 @@ const AttendanceApp = () => {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800 p-4 transition-all duration-500">
       {/* Enhanced Message Display */}
       {message && (
-        <div className={`fixed top-6 right-6 z-50 p-4 rounded-xl shadow-2xl transition-all duration-500 transform translate-x-0 backdrop-blur-sm border max-w-sm ${
-          message.includes('error') || message.includes('Failed') || message.includes('Invalid')
+        <div className={`fixed top-6 right-6 z-50 p-4 rounded-xl shadow-2xl transition-all duration-500 transform translate-x-0 backdrop-blur-sm border max-w-sm ${message.includes('error') || message.includes('Failed') || message.includes('Invalid')
             ? 'bg-red-50/90 dark:bg-red-900/90 text-red-800 dark:text-red-200 border-red-200 dark:border-red-700'
             : 'bg-green-50/90 dark:bg-green-900/90 text-green-800 dark:text-green-200 border-green-200 dark:border-green-700'
-        }`}>
+          }`}>
           <div className="flex items-center">
             {message.includes('error') || message.includes('Failed') || message.includes('Invalid') ? (
               <X className="w-5 h-5 mr-2 flex-shrink-0" />
