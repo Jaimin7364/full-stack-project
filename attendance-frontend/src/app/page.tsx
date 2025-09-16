@@ -1,6 +1,7 @@
 'use client'
 import React, { useState, useEffect } from 'react';
 import { User, Clock, Calendar, CheckCircle, Users, LogIn, UserPlus, Eye, EyeOff, Mail, Phone, Lock, MapPin, ListTodo, Moon, Sun, X, Plus, Trash2, Building2, Timer, LogOut } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
@@ -20,6 +21,7 @@ interface Attendance {
   tasks?: string[];
   verified: boolean;
   userId?: User;
+  date?: string;
 }
 
 const AttendanceApp = () => {
@@ -30,7 +32,6 @@ const AttendanceApp = () => {
   const [message, setMessage] = useState('');
   const [token, setToken] = useState<string>("");
   const [darkMode, setDarkMode] = useState(false);
-
   // --- Auth States ---
   const [authData, setAuthData] = useState({
     name: '',
@@ -40,13 +41,11 @@ const AttendanceApp = () => {
     otp: '',
     showPassword: false
   });
-
   // --- Attendance States ---
   const [location, setLocation] = useState('');
   const [tasks, setTasks] = useState(['']);
   const [monthlyData, setMonthlyData] = useState<any>(null);
   const [todaysAttendance, setTodaysAttendance] = useState<Attendance | null>(null);
-
   // --- Admin States ---
   const [adminData, setAdminData] = useState<{
     todaysAttendance: Attendance[];
@@ -57,10 +56,20 @@ const AttendanceApp = () => {
     allUsers: [],
     selectedAttendance: []
   });
+  // --- Modal State ---
+  const [selectedUser, setSelectedUser] = useState<{
+    isOpen: boolean;
+    userId: string;
+    userName: string;
+    presentDays: number;
+    absentDays: number;
+    gross: number;
+    totalDays: number;
+    records: any[];
+  } | null>(null);
 
   // --- Dark/Light Mode Toggle (Fixed) ---
   useEffect(() => {
-    // Check localStorage first, then system preference
     const savedTheme = localStorage.getItem("theme");
     if (savedTheme) {
       setDarkMode(savedTheme === "dark");
@@ -70,7 +79,6 @@ const AttendanceApp = () => {
   }, []);
 
   useEffect(() => {
-    // Apply theme to document
     if (darkMode) {
       document.documentElement.classList.add("dark");
       localStorage.setItem("theme", "dark");
@@ -85,7 +93,7 @@ const AttendanceApp = () => {
     const savedToken = localStorage.getItem("token");
     if (savedToken) {
       setToken(savedToken);
-      fetchProfile(); // Auto-login if token exists
+      fetchProfile();
     }
   }, []);
 
@@ -122,37 +130,33 @@ const AttendanceApp = () => {
   const showMessage = (msg: string, isError = false) => {
     setMessage(msg);
     setTimeout(() => setMessage(''), 5000);
-  }; const fetchLocation = async () => {
+  };
+
+  const fetchLocation = async () => {
     if (!navigator.geolocation) {
       showMessage("Geolocation is not supported by this browser.", true);
       return;
     }
-
     try {
       setLoading(true);
-      // Alternative approach - explicit typing
-const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-  navigator.geolocation.getCurrentPosition(
-    (pos) => resolve(pos),
-    (err) => reject(err),
-    {
-      enableHighAccuracy: true,
-      timeout: 10000,
-      maximumAge: 600000
-    }
-  );
-});
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve(pos),
+          (err) => reject(err),
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 600000
+          }
+        );
+      });
       const { latitude, longitude } = position.coords;
-
-      // Convert coordinates to address using reverse geocoding
       const address = await reverseGeocode(latitude, longitude);
       setLocation(address);
       showMessage("Location fetched successfully!", false);
-
     } catch (error) {
       console.error('Location error:', error);
       let errorMessage = "Unable to fetch location. ";
-
       if (error && typeof error === 'object' && 'code' in error) {
         if (error.code === 1) {
           errorMessage += "Please allow location access and try again.";
@@ -164,16 +168,13 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
       } else {
         errorMessage += (error instanceof Error ? error.message : "Please try again.");
       }
-
       showMessage(errorMessage, true);
     } finally {
       setLoading(false);
     }
   };
 
-  // Reverse geocoding function using multiple APIs
   const reverseGeocode = async (lat: number, lon: number) => {
-    // Try OpenStreetMap Nominatim first (free, no API key required)
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`,
@@ -183,7 +184,6 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
           }
         }
       );
-
       if (response.ok) {
         const data = await response.json();
         if (data && data.display_name) {
@@ -193,49 +193,35 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
     } catch (error) {
       console.warn('Nominatim geocoding failed:', error);
     }
-
-    // Fallback to basic coordinates if geocoding fails
     return `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
   };
 
-  // Format address from geocoding response
   const formatAddress = (addressComponents: { house_number: any; road: any; suburb: any; neighbourhood: any; city: any; town: any; village: any; state: any; province: any; }, fullAddress: string) => {
     const parts = [];
-
-    // Add house number and street
     if (addressComponents.house_number && addressComponents.road) {
       parts.push(`${addressComponents.house_number} ${addressComponents.road}`);
     } else if (addressComponents.road) {
       parts.push(addressComponents.road);
     }
-
-    // Add locality/suburb
     if (addressComponents.suburb || addressComponents.neighbourhood) {
       parts.push(addressComponents.suburb || addressComponents.neighbourhood);
     }
-
-    // Add city
     if (addressComponents.city || addressComponents.town || addressComponents.village) {
       parts.push(addressComponents.city || addressComponents.town || addressComponents.village);
     }
-
-    // Add state/province
     if (addressComponents.state || addressComponents.province) {
       parts.push(addressComponents.state || addressComponents.province);
     }
-
-    // If we have formatted parts, use them; otherwise use full address
     if (parts.length > 0) {
       return parts.join(', ');
     }
-
-    // Clean up full address by removing country and postal code for brevity
     return fullAddress
       .split(',')
-      .slice(0, -2) // Remove last 2 parts (usually postal code and country)
+      .slice(0, -2)
       .join(',')
       .trim();
   };
+
   const fetchProfile = async () => {
     try {
       const data = await api('/auth/profile');
@@ -464,6 +450,24 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
     }
   };
 
+  const handleViewUserStats = async (userId: string, userName: string) => {
+    try {
+      const data = await api(`/admin/user-attendance/${userId}`);
+      setSelectedUser({
+        isOpen: true,
+        userId,
+        userName,
+        presentDays: data.presentDays,
+        absentDays: data.absentDays,
+        gross: data.gross,
+        totalDays: data.totalDays,
+        records: data.records,
+      });
+    } catch (error) {
+      showMessage('Failed to fetch user attendance', true);
+    }
+  };
+
   useEffect(() => {
     if (currentView === 'user-dashboard' && user) {
       fetchTodaysAttendance();
@@ -485,6 +489,111 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
       <span className="ml-2">Loading...</span>
     </div>
   );
+
+  const UserAttendanceModal = ({
+    isOpen,
+    onClose,
+    userName,
+    presentDays,
+    absentDays,
+    gross,
+    totalDays,
+    records,
+  }: {
+    isOpen: boolean;
+    onClose: () => void;
+    userName: string;
+    presentDays: number;
+    absentDays: number;
+    gross: number;
+    totalDays: number;
+    records: any[];
+  }) => {
+    return (
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+            onClick={onClose}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl p-6 border border-gray-200 dark:border-gray-700"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200">
+                  📊 {userName}'s Monthly Performance
+                </h2>
+                <button
+                  onClick={onClose}
+                  className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                >
+                  <X className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+                </button>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-xl">
+                  <p className="text-3xl font-bold text-green-600 dark:text-green-400">{presentDays}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Present</p>
+                </div>
+                <div className="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-xl">
+                  <p className="text-3xl font-bold text-red-600 dark:text-red-400">{absentDays}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Absent</p>
+                </div>
+                <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
+                  <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{totalDays}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Working Days</p>
+                </div>
+                <div className="text-center p-4 bg-purple-50 dark:bg-purple-900/20 rounded-xl">
+                  <p className="text-3xl font-bold text-purple-600 dark:text-purple-400">{gross}%</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Attendance Rate</p>
+                </div>
+              </div>
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-2">Attendance Records</h3>
+                {records.length === 0 ? (
+                  <p className="text-center text-gray-500 dark:text-gray-400 py-4">No records found</p>
+                ) : (
+                  <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+                    {records.map((record, index) => (
+                      <div key={index} className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-700/30">
+                        <div className="flex justify-between items-center mb-2">
+                          <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            {new Date(record.date).toLocaleDateString()}
+                          </p>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${record.verified ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300'}`}>
+                            {record.verified ? 'Verified' : 'Pending'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">Check In</p>
+                            <p className="font-medium text-gray-800 dark:text-gray-200">{new Date(record.startTime).toLocaleTimeString()}</p>
+                          </div>
+                          {record.endTime && (
+                            <div>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">Check Out</p>
+                              <p className="font-medium text-gray-800 dark:text-gray-200">{new Date(record.endTime).toLocaleTimeString()}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    );
+  };
 
   // --- Render Functions ---
   const renderAuthForm = () => {
@@ -585,7 +694,6 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
         </div>
       );
     }
-
     if (currentView === 'verify-otp') {
       return (
         <div className="max-w-md mx-auto bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-2xl shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-700">
@@ -632,7 +740,6 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
         </div>
       );
     }
-
     return (
       <div className="max-w-md mx-auto bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-2xl shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-700">
         <div className="bg-gradient-to-r from-indigo-500 to-blue-600 p-6 text-center">
@@ -700,6 +807,7 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
       </div>
     );
   };
+
   const renderUserDashboard = () => (
     <div className="max-w-6xl mx-auto space-y-6">
       {/* Enhanced Header */}
@@ -723,14 +831,12 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
           </div>
         </div>
       </div>
-
       {/* Today's Attendance Card */}
       <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
         <h2 className="text-2xl font-bold mb-6 flex items-center text-gray-800 dark:text-gray-200">
           <Timer className="w-6 h-6 mr-3 text-blue-500 dark:text-blue-400" />
           Today's Attendance
         </h2>
-
         {todaysAttendance ? (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -759,7 +865,6 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
                 </div>
               )}
             </div>
-
             {/* Working Hours Display */}
             {todaysAttendance.endTime && (
               <div className="bg-gradient-to-br from-yellow-50 to-orange-100 dark:from-yellow-900/30 dark:to-orange-900/30 p-5 rounded-xl border border-yellow-200 dark:border-yellow-700">
@@ -773,7 +878,6 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
                 </p>
               </div>
             )}
-
             {todaysAttendance.tasks && todaysAttendance.tasks.length > 0 && (
               <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-5 border border-gray-200 dark:border-gray-600">
                 <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-3 flex items-center">
@@ -790,7 +894,6 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
                 </div>
               </div>
             )}
-
             <div className="flex items-center justify-center p-4 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600">
               <div className="text-center">
                 <CheckCircle className={`w-8 h-8 mx-auto mb-2 ${todaysAttendance.verified ? 'text-green-500 dark:text-green-400' : 'text-yellow-500 dark:text-yellow-400'}`} />
@@ -851,7 +954,6 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
             </button>
           </div>
         )}
-
         {/* Complete Attendance Section */}
         {todaysAttendance && !todaysAttendance.endTime && (
           <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
@@ -889,7 +991,6 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
                   />
                 </div>
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
                   <ListTodo className="w-4 h-4 inline mr-2 text-blue-500 dark:text-blue-400" />
@@ -924,7 +1025,6 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
                   Add Another Task
                 </button>
               </div>
-
               <button
                 onClick={handleCompleteAttendance}
                 disabled={loading || !location.trim() || tasks.filter(t => t.trim()).length === 0}
@@ -941,7 +1041,6 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
           </div>
         )}
       </div>
-
       {/* Monthly Summary */}
       {monthlyData && (
         <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
@@ -983,6 +1082,7 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
       )}
     </div>
   );
+
   const renderAdminDashboard = () => (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Enhanced Admin Header */}
@@ -996,19 +1096,16 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
             <p className="text-purple-100">Manage attendance and monitor team performance</p>
           </div>
           <div className="flex items-center space-x-3">
-
-
             <button
               onClick={handleLogout}
               className="bg-red-500/80 hover:bg-red-500 px-4 py-2 rounded-xl transition-all duration-200 backdrop-blur-sm border border-red-400/50 flex items-center"
             >
-              <LogIn className="w-4 h-4 mr-2" />
+              <LogOut className="w-4 h-4 mr-2" />
               Logout
             </button>
           </div>
         </div>
       </div>
-
       {/* Today's Attendance Management */}
       <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
         <div className="flex justify-between items-center mb-6">
@@ -1034,7 +1131,6 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
             </button>
           )}
         </div>
-
         {adminData.todaysAttendance.length === 0 ? (
           <div className="text-center py-12">
             <Users className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
@@ -1089,7 +1185,6 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
                     </div>
                   </div>
                 </div>
-
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                   <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-700">
                     <div className="flex items-center justify-between mb-2">
@@ -1120,7 +1215,6 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
                     </div>
                   )}
                 </div>
-
                 {record.tasks && record.tasks.length > 0 && (
                   <div className="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-lg border border-gray-200 dark:border-gray-600">
                     <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2 flex items-center">
@@ -1142,7 +1236,6 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
           </div>
         )}
       </div>
-
       {/* All Users Management */}
       <div className="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-2xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
         <h2 className="text-2xl font-bold mb-6 flex items-center text-gray-800 dark:text-gray-200">
@@ -1152,7 +1245,6 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
             {adminData.allUsers.length} Users
           </span>
         </h2>
-
         {adminData.allUsers.length === 0 ? (
           <div className="text-center py-12">
             <User className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
@@ -1183,14 +1275,7 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
                     {user.role === 'admin' ? '👑 Admin' : '👤 User'}
                   </span>
                   <button
-                    onClick={async () => {
-                      try {
-                        const data = await api(`/admin/user-attendance/${user._id}`);
-                        alert(`📊 ${user.name}'s Monthly Performance:\n\n✅ Present: ${data.presentDays} days\n❌ Absent: ${data.absentDays} days\n📈 Attendance Rate: ${data.gross}%\n📅 Total Working Days: ${data.totalDays}`);
-                      } catch (error) {
-                        showMessage('Failed to fetch user attendance', true);
-                      }
-                    }}
+                    onClick={() => handleViewUserStats(user._id, user.name)}
                     className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white px-4 py-2 rounded-lg text-sm transition-all duration-200 transform hover:scale-105 font-medium"
                   >
                     📊 View Stats
@@ -1201,6 +1286,18 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
           </div>
         )}
       </div>
+      {selectedUser && (
+        <UserAttendanceModal
+          isOpen={selectedUser.isOpen}
+          onClose={() => setSelectedUser(null)}
+          userName={selectedUser.userName}
+          presentDays={selectedUser.presentDays}
+          absentDays={selectedUser.absentDays}
+          gross={selectedUser.gross}
+          totalDays={selectedUser.totalDays}
+          records={selectedUser.records}
+        />
+      )}
     </div>
   );
 
@@ -1222,7 +1319,6 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
           </div>
         </div>
       )}
-
       {/* Main Content */}
       <div className="relative">
         {!token && (currentView === 'login' || currentView === 'signup' || currentView === 'verify-otp') && (
@@ -1235,7 +1331,6 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
         {token && currentView === 'user-dashboard' && renderUserDashboard()}
         {token && currentView === 'admin-dashboard' && renderAdminDashboard()}
       </div>
-
       {/* Background decoration */}
       <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
         <div className="absolute -top-40 -right-32 w-80 h-80 bg-purple-300 dark:bg-purple-800 rounded-full mix-blend-multiply dark:mix-blend-soft-light filter blur-xl opacity-20 animate-pulse"></div>
