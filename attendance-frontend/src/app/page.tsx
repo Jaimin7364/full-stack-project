@@ -1050,6 +1050,7 @@ const position = await new Promise<GeolocationPosition>((resolve, reject) => {
                     <input
                       type="checkbox"
                       checked={adminData.selectedAttendance.includes(record._id)}
+                      disabled={record.verified}
                       onChange={(e) => {
                         if (e.target.checked) {
                           setAdminData(prev => ({
